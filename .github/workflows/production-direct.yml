@@ -1,0 +1,46 @@
+name: Build backend images for direct VPS transfer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    if: github.ref == 'refs/heads/production'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - name: Build PHP application image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.prod
+          target: app
+          load: true
+          push: false
+          tags: consulting-backend-app:${{ github.sha }}
+      - name: Build web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.prod
+          target: web
+          load: true
+          push: false
+          tags: consulting-backend-web:${{ github.sha }}
+      - name: Package images
+        run: |
+          docker save \
+            consulting-backend-app:${{ github.sha }} \
+            consulting-backend-web:${{ github.sha }} | gzip -1 > backend-images.tar.gz
+          sha256sum backend-images.tar.gz > backend-images.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-images-${{ github.sha }}
+          path: |
+            backend-images.tar.gz
+            backend-images.tar.gz.sha256
+          retention-days: 3

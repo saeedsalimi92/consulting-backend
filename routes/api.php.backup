@@ -1,0 +1,28 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+use App\Modules\Counselor\Controllers\CounselorController;
+use App\Modules\Counselor\Controllers\SpecialtyController;
+use App\Modules\Counselor\Controllers\CommentController;
+
+Route::get('/health', fn () => response()->json(['status'=>'ok']));
+
+// Public endpoints consumed by Nuxt 4.
+Route::get('/counselors', [CounselorController::class, 'index']);
+Route::get('/counselors/{counselor}', [CounselorController::class, 'show']);
+Route::get('/specialties', [SpecialtyController::class, 'index']);
+Route::get('/comments', [CommentController::class, 'index']); // requires ?type=counselor&id=<id>
+
+// Requires working Sanctum authentication and authorized admin users.
+Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
+    Route::post('/counselors', [CounselorController::class, 'store']);
+    Route::put('/counselors/{counselor}', [CounselorController::class, 'update']);
+    Route::post('/counselors/{counselor}', [CounselorController::class, 'update']); // multipart forms
+    Route::delete('/counselors/{counselor}', [CounselorController::class, 'destroy']);
+    Route::post('/specialties', [SpecialtyController::class, 'store']);
+    Route::put('/specialties/{specialty}', [SpecialtyController::class, 'update']);
+    Route::delete('/specialties/{specialty}', [SpecialtyController::class, 'destroy']);
+    Route::post('/comments', [CommentController::class, 'store']);
+    Route::patch('/comments/{comment}', [CommentController::class, 'update']);
+    Route::delete('/comments/{comment}', [CommentController::class, 'destroy']);
+});

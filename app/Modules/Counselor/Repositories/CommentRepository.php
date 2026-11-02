@@ -1,0 +1,4 @@
+<?php
+ namespace App\Modules\Counselor\Repositories;
+ use App\Modules\Counselor\Models\Comment;use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+ class CommentRepository implements CommentRepositoryInterface {public function paginate(array $f=[]):LengthAwarePaginator{$q=Comment::query()->with('user');if(array_key_exists('approved',$f))$q->where('is_approved',$f['approved']);if(!empty($f['type']) && !empty($f['id']))$q->where('commentable_type',$f['type'])->where('commentable_id',$f['id']);return $q->latest()->paginate(min((int)($f['per_page']??15),100));}public function find(int $id):?Comment{return Comment::find($id);}public function create(array $data):Comment{return Comment::create($data);}public function update(Comment $model,array $data):Comment{$model->update($data);return $model->refresh();}public function delete(Comment $model):void{$model->delete();}}

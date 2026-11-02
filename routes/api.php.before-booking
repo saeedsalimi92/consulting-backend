@@ -1,0 +1,52 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+use App\Modules\Counselor\Controllers\CounselorController;
+use App\Modules\Counselor\Controllers\SpecialtyController;
+use App\Modules\Counselor\Controllers\CommentController;
+
+Route::get('/health', fn () => response()->json(['status'=>'ok']));
+
+// Public endpoints consumed by Nuxt 4.
+Route::get('/counselors', [CounselorController::class, 'index']);
+Route::get('/counselors/{counselor}', [CounselorController::class, 'show']);
+Route::get('/specialties', [SpecialtyController::class, 'index']);
+Route::get('/comments', [CommentController::class, 'index']); // requires ?type=counselor&id=<id>
+
+// Requires working Sanctum authentication and authorized admin users.
+Route::post('/admin/login', [\App\Http\Controllers\Admin\AuthController::class, 'login']);
+Route::get('/content/{type}', [\App\Http\Controllers\Admin\CmsController::class, 'publicIndex']);
+Route::get('/content/{type}/{slug}', [\App\Http\Controllers\Admin\CmsController::class, 'show']);
+Route::post('/appointment-requests', [\App\Http\Controllers\Admin\ManagementController::class, 'appointmentStore'])->middleware('throttle:5,1');
+Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureAdmin::class])->prefix('admin')->group(function () {
+    Route::get('/me', [\App\Http\Controllers\Admin\AuthController::class, 'me']);
+    Route::post('/logout', [\App\Http\Controllers\Admin\AuthController::class, 'logout']);
+    Route::get('/dashboard', [\App\Http\Controllers\Admin\ManagementController::class, 'dashboard'])->middleware('\App\Http\Middleware\EnsureAdmin:dashboard.view');
+    Route::get('/counselors', [\App\Http\Controllers\Admin\ManagementController::class, 'counselors'])->middleware('\App\Http\Middleware\EnsureAdmin:counselors.manage');
+    Route::get('/specialties', [\App\Http\Controllers\Admin\ManagementController::class, 'specialties'])->middleware('\App\Http\Middleware\EnsureAdmin:specialties.manage');
+    Route::get('/comments', [\App\Http\Controllers\Admin\ManagementController::class, 'comments'])->middleware('\App\Http\Middleware\EnsureAdmin:comments.manage');
+    Route::get('/users', [\App\Http\Controllers\Admin\ManagementController::class, 'users'])->middleware('\App\Http\Middleware\EnsureAdmin:users.manage');
+    Route::post('/users', [\App\Http\Controllers\Admin\ManagementController::class, 'userStore'])->middleware('\App\Http\Middleware\EnsureAdmin:users.manage');
+    Route::patch('/users/{user}', [\App\Http\Controllers\Admin\ManagementController::class, 'userUpdate'])->middleware('\App\Http\Middleware\EnsureAdmin:users.manage');
+    Route::delete('/users/{user}', [\App\Http\Controllers\Admin\ManagementController::class, 'userDestroy'])->middleware('\App\Http\Middleware\EnsureAdmin:users.manage');
+    Route::get('/settings', [\App\Http\Controllers\Admin\ManagementController::class, 'settings'])->middleware('\App\Http\Middleware\EnsureAdmin:settings.manage');
+    Route::put('/settings', [\App\Http\Controllers\Admin\ManagementController::class, 'settingUpdate'])->middleware('\App\Http\Middleware\EnsureAdmin:settings.manage');
+    Route::get('/appointments', [\App\Http\Controllers\Admin\ManagementController::class, 'appointments'])->middleware('\App\Http\Middleware\EnsureAdmin:appointments.manage');
+    Route::patch('/appointments/{id}', [\App\Http\Controllers\Admin\ManagementController::class, 'appointmentUpdate'])->middleware('\App\Http\Middleware\EnsureAdmin:appointments.manage');
+    Route::get('/content/{type}', [\App\Http\Controllers\Admin\CmsController::class, 'index'])->middleware('\App\Http\Middleware\EnsureAdmin:content.manage');
+    Route::post('/content/{type}', [\App\Http\Controllers\Admin\CmsController::class, 'store'])->middleware('\App\Http\Middleware\EnsureAdmin:content.manage');
+    Route::put('/content/{type}/{entry}', [\App\Http\Controllers\Admin\CmsController::class, 'update'])->middleware('\App\Http\Middleware\EnsureAdmin:content.manage');
+    Route::delete('/content/{type}/{entry}', [\App\Http\Controllers\Admin\CmsController::class, 'destroy'])->middleware('\App\Http\Middleware\EnsureAdmin:content.manage');
+    Route::post('/counselors', [CounselorController::class, 'store'])->middleware('\App\Http\Middleware\EnsureAdmin:counselors.manage');
+    Route::put('/counselors/{counselor}', [CounselorController::class, 'update'])->middleware('\App\Http\Middleware\EnsureAdmin:counselors.manage');
+    Route::post('/counselors/{counselor}', [CounselorController::class, 'update'])->middleware('\App\Http\Middleware\EnsureAdmin:counselors.manage'); // multipart forms
+    Route::delete('/counselors/{counselor}', [CounselorController::class, 'destroy'])->middleware('\App\Http\Middleware\EnsureAdmin:counselors.manage');
+    Route::post('/specialties', [SpecialtyController::class, 'store'])->middleware('\App\Http\Middleware\EnsureAdmin:specialties.manage');
+    Route::put('/specialties/{specialty}', [SpecialtyController::class, 'update'])->middleware('\App\Http\Middleware\EnsureAdmin:specialties.manage');
+    Route::delete('/specialties/{specialty}', [SpecialtyController::class, 'destroy'])->middleware('\App\Http\Middleware\EnsureAdmin:specialties.manage');
+    Route::post('/comments', [CommentController::class, 'store'])->middleware('\App\Http\Middleware\EnsureAdmin:comments.manage');
+    Route::patch('/comments/{comment}', [CommentController::class, 'update'])->middleware('\App\Http\Middleware\EnsureAdmin:comments.manage');
+
+    Route::delete('/comments/{comment}', [CommentController::class, 'destroy'])->middleware('\App\Http\Middleware\EnsureAdmin:comments.manage');
+    Route::post('/gallery/upload', [\App\Http\Controllers\Admin\CmsController::class, 'uploadGalleryImage'])->middleware('\App\Http\Middleware\EnsureAdmin:content.manage');
+});

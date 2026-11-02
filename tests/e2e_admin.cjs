@@ -1,0 +1,127 @@
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || '/tmp/elham-public-e2e/node_modules/playwright')
+const base = process.env.ADMIN_BASE_URL || 'http://localhost:3001'
+const api = process.env.TEST_API_BASE || 'http://localhost:8011/api'
+const bookingId = Number(process.env.QA_BOOKING_ID || 184)
+const screenshots = process.env.QA_SCREENSHOT_DIR || path.resolve(__dirname, '../storage/qa/admin')
+fs.mkdirSync(screenshots, { recursive: true })
+const results = [], errors = [], pageErrors = []
+async function test(name, fn) { try { await fn(); results.push({name,status:'PASS'}); console.log(`PASS ${name}`) } catch (e) { results.push({name,status:'FAIL',error:String(e)}); console.log(`FAIL ${name}: ${e.message}`) } }
+async function main() {
+  const browser = await chromium.launch({headless:true, executablePath:process.env.CHROME_EXECUTABLE||'/tmp/elham-chrome/opt/google/chrome/chrome', args:['--no-sandbox']})
+  const context = await browser.newContext({viewport:{width:1440,height:1000}}), page = await context.newPage()
+  page.on('pageerror', e=>pageErrors.push(e.message))
+  page.on('response', r=>{if(r.url().startsWith(api)) errors.push({status:r.status(),url:r.url()})})
+  let token = '', booking = null
+  await test('admin login rejects invalid credentials', async()=>{
+    await page.goto(`${base}/auth/login`,{waitUntil:'networkidle'})
+    assert.ok((await page.locator('body').innerText()).length>20,'login page did not render')
+    await page.locator('#login-email').fill('qa-invalid@example.test')
+    await page.locator('#login-password').fill('wrong-password')
+    await page.getByRole('button',{name:'ورود به فضای کاری'}).click()
+    await page.getByRole('alert').waitFor({timeout:15000})
+    assert.ok(!await page.evaluate(()=>localStorage.getItem('admin-token')))
+  })
+  await test('admin login and dashboard load from Laravel', async()=>{
+    await page.goto(`${base}/auth/login`,{waitUntil:'networkidle'})
+    await page.locator('#login-email').fill('qa-panel-admin@example.test')
+    await page.locator('#login-password').fill('QA-Panel-Admin-2026!')
+    await page.getByRole('button',{name:'ورود به فضای کاری'}).click()
+    await page.waitForURL(`${base}/`,{timeout:20000})
+    await page.getByText('داشبورد رزرو',{exact:false}).first().waitFor({timeout:15000})
+    token=await page.evaluate(()=>localStorage.getItem('admin-token'))
+    assert.ok(token)
+    await page.screenshot({path:path.join(screenshots,'admin-dashboard.png'),fullPage:true})
+  })
+  await test('admin reservations, finance and calendar contain the public booking ID',async()=>{
+    const headers={Authorization:`Bearer ${token}`,Origin:base,Accept:'application/json'}
+    const response=await page.request.get(`${api}/admin/booking/reservations?page=1`,{headers})
+    assert.equal(response.status(),200)
+    const body=await response.json(); const items=Array.isArray(body.data)?body.data:body.data.data
+    booking=items.find(x=>Number(x.id)===bookingId)
+    if(!booking){const searched=await page.request.get(`${api}/admin/booking/reservations?q=${bookingId}`,{headers});assert.equal(searched.status(),200);const sb=await searched.json();const si=Array.isArray(sb.data)?sb.data:sb.data.data;booking=si.find(x=>Number(x.id)===bookingId)}
+    assert.ok(booking,`booking ${bookingId} missing from admin reservations API`)
+    assert.equal(booking.status,'confirmed')
+    const payments=await page.request.get(`${api}/admin/booking/payments?page=1`,{headers})
+    assert.equal(payments.status(),200)
+    const payBody=await payments.json(), payItems=Array.isArray(payBody.data)?payBody.data:payBody.data.data
+    assert.ok(payItems.some(x=>Number(x.booking_id)===bookingId&&x.status==='verified'),'verified payment missing from admin finance API')
+    const date=booking.starts_at.slice(0,10)
+    const calendar=await page.request.get(`${api}/admin/booking/calendar?date=${date}&counselor_id=${booking.counselor_id}`,{headers})
+    assert.equal(calendar.status(),200)
+    assert.ok((await calendar.json()).data.some(x=>Number(x.id)===bookingId),'booking missing from filtered admin calendar API')
+    await page.goto(`${base}/booking/appointments`,{waitUntil:'networkidle'})
+    await page.getByRole('heading',{name:'نوبت‌ها'}).waitFor({timeout:15000})
+    await page.locator('input[type="text"]').first().fill(String(bookingId))
+    await page.getByRole('button',{name:'اعمال فیلتر'}).click()
+    await page.getByRole('cell',{name:String(bookingId),exact:true}).waitFor({timeout:15000})
+    assert.ok((await page.locator('body').innerText()).includes(String(bookingId)),'booking missing from admin appointments UI after global search')
+    await page.screenshot({path:path.join(screenshots,'admin-bookings.png'),fullPage:true})
+    await page.goto(`${base}/booking/finance`,{waitUntil:'networkidle'})
+    await page.getByRole('heading',{name:'مالی'}).waitFor({timeout:15000})
+    assert.ok((await page.locator('body').innerText()).includes(String(bookingId)),'payment missing from finance UI')
+    await page.goto(`${base}/booking/calendar`,{waitUntil:'networkidle'})
+    await page.getByRole('heading',{name:'تقویم'}).waitFor({timeout:15000})
+    await page.locator('input[type="date"]').first().fill(booking.starts_at.slice(0,10))
+    await page.getByRole('button',{name:'نمایش تقویم'}).click()
+    await page.getByText(`نوبت #${bookingId}`,{exact:false}).waitFor({timeout:15000})
+    await page.screenshot({path:path.join(screenshots,'admin-calendar-same-booking.png'),fullPage:true})
+  })
+  await test('counselor authentication and own appointment scope returns the same booking',async()=>{
+    const login=await page.request.post(`${api}/counselor/login`,{headers:{Origin:base},data:{email:'qa-panel-counselor@example.test',password:'QA-Panel-Counselor-2026!'}})
+    assert.equal(login.status(),200,await login.text())
+    const data=await login.json();const counselorToken=data.token
+    const response=await page.request.get(`${api}/counselor/appointments`,{headers:{Authorization:`Bearer ${counselorToken}`,Origin:base,Accept:'application/json'}})
+    assert.equal(response.status(),200,await response.text())
+    const result=await response.json(), records=Array.isArray(result.data)?result.data:result.data.data
+    assert.ok(records.some(x=>Number(x.id)===bookingId),'same booking missing from counselor appointments API')
+    const finances=await page.request.get(`${api}/counselor/finances`,{headers:{Authorization:`Bearer ${counselorToken}`,Origin:base,Accept:'application/json'}})
+    assert.equal(finances.status(),200)
+    const second=await page.request.post(`${api}/counselor/login`,{headers:{Origin:base},data:{email:'qa-other-counselor@example.test',password:'QA-Other-Counselor-2026!'}})
+    assert.equal(second.status(),200)
+    const secondToken=(await second.json()).token
+    const privateNotes=await page.request.get(`${api}/counselor/appointments/${bookingId}/notes`,{headers:{Authorization:`Bearer ${secondToken}`,Origin:base,Accept:'application/json'}})
+    assert.equal(privateNotes.status(),404,'another counselor accessed a private session note')
+    const signedOut=await page.request.post(`${api}/counselor/logout`,{headers:{Authorization:`Bearer ${counselorToken}`,Origin:base,Accept:'application/json'}})
+    assert.equal(signedOut.status(),204)
+    const revoked=await page.request.get(`${api}/counselor/appointments`,{headers:{Authorization:`Bearer ${counselorToken}`,Origin:base,Accept:'application/json'}})
+    assert.equal(revoked.status(),401,'counselor token remains usable after logout')
+  })
+  await test('counselor portal UI loads scoped booking and private notes',async()=>{
+    await page.goto(`${base}/counselor/login`,{waitUntil:'networkidle'})
+    await page.getByLabel('ایمیل').fill('qa-panel-counselor@example.test')
+    await page.getByLabel('رمز عبور').fill('QA-Panel-Counselor-2026!')
+    await page.getByRole('button',{name:'ورود به پنل مشاور'}).click()
+    await page.waitForURL(`${base}/counselor`,{timeout:20000})
+    const card=page.locator('.counselor-appointment').filter({hasText:`نوبت #${bookingId}`})
+    await card.waitFor({timeout:15000})
+    await card.click()
+    await page.getByText(`نوبت #${bookingId}`,{exact:false}).last().waitFor()
+    const note=`QA private note ${Date.now()}`
+    await page.getByLabel('یادداشت محرمانه (فقط مشاور مجاز)').fill(note)
+    await page.getByRole('button',{name:'ثبت یادداشت خصوصی'}).click()
+    await page.getByText(note,{exact:true}).waitFor({timeout:15000})
+    await page.getByRole('tab',{name:'درآمد و تسویه'}).click()
+    await page.getByText('مانده قابل پرداخت').waitFor()
+    await page.screenshot({path:path.join(screenshots,'counselor-portal.png'),fullPage:true})
+    await page.getByRole('button',{name:'خروج'}).click()
+    await page.waitForURL('**/counselor/login',{timeout:15000})
+  })
+
+  await test('admin logout revokes token and redirects protected routes',async()=>{
+    const headers={Authorization:`Bearer ${token}`,Origin:base,Accept:'application/json'}
+    const logout=await page.request.post(`${api}/admin/logout`,{headers})
+    assert.equal(logout.status(),204)
+    const revoked=await page.request.get(`${api}/admin/me`,{headers})
+    assert.equal(revoked.status(),401,'admin token remains usable after logout')
+    await page.evaluate(()=>localStorage.removeItem('admin-token'))
+    await page.goto(`${base}/booking/appointments`,{waitUntil:'networkidle'})
+    await page.waitForURL('**/auth/login',{timeout:15000})
+  })
+  await browser.close()
+  console.log(JSON.stringify({bookingId,results,pageErrors,apiResponses:errors,screenshots},null,2))
+  if(results.some(x=>x.status==='FAIL')||pageErrors.length)process.exitCode=1
+}
+main().catch(e=>{console.error(e);process.exit(1)})

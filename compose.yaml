@@ -1,0 +1,66 @@
+services:
+  laravel:
+    build: .
+    image: elham-consulting-laravel:local
+    working_dir: /var/www/html
+    ports:
+      - "127.0.0.1:${APP_PORT:-8010}:8000"
+    volumes:
+      - ./:/var/www/html
+    environment:
+      DB_HOST: database
+      DB_PORT: 3306
+      CACHE_STORE: file
+      SESSION_DRIVER: file
+      QUEUE_CONNECTION: database
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: unless-stopped
+  queue:
+    image: elham-consulting-laravel:local
+    working_dir: /var/www/html
+    command: php artisan queue:work database --tries=3 --backoff=30 --sleep=3
+    volumes:
+      - ./:/var/www/html
+    environment:
+      DB_HOST: database
+      DB_PORT: 3306
+      CACHE_STORE: file
+      QUEUE_CONNECTION: database
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: unless-stopped
+  scheduler:
+    image: elham-consulting-laravel:local
+    working_dir: /var/www/html
+    command: php artisan schedule:work
+    volumes:
+      - ./:/var/www/html
+    environment:
+      DB_HOST: database
+      DB_PORT: 3306
+      CACHE_STORE: file
+      QUEUE_CONNECTION: database
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: unless-stopped
+  database:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-consulting}
+      MYSQL_USER: ${DB_USERNAME:-consulting}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-consulting_local_password}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-local_root_password_change_me}
+    volumes:
+      - consulting_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+volumes:
+  consulting_mysql_data:

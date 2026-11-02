@@ -1,0 +1,3 @@
+<?php
+use Illuminate\Database\Migrations\Migration;use Illuminate\Database\Schema\Blueprint;use Illuminate\Support\Facades\Schema;
+return new class extends Migration {public function up():void{Schema::create('comments',function(Blueprint $t){$t->id();$t->morphs('commentable');$t->foreignId('user_id')->nullable()->constrained()->nullOnDelete();$t->string('guest_name')->nullable();$t->string('guest_email')->nullable();$t->text('body');$t->foreignId('parent_id')->nullable()->constrained('comments')->nullOnDelete();$t->boolean('is_approved')->default(false)->index();$t->timestamps();});}public function down():void{Schema::dropIfExists('comments');}};

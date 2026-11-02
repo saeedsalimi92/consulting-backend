@@ -1,0 +1,47 @@
+# Disposable integration environment. This file has no dependency on the
+# development Compose project or its consulting_mysql_data volume.
+services:
+  laravel-test:
+    build: .
+    image: elham-consulting-laravel:local
+    working_dir: /var/www/html
+    command: php artisan serve --host=0.0.0.0 --port=8000
+    ports:
+      - "127.0.0.1:8011:8000"
+    volumes:
+      - ./:/var/www/html
+    environment:
+      APP_ENV: testing
+      APP_DEBUG: "false"
+      APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      APP_URL: http://localhost:8011
+      DB_CONNECTION: mysql
+      DB_HOST: mysql-test
+      DB_PORT: 3306
+      DB_DATABASE: consulting_booking_test_20261012
+      DB_USERNAME: consulting_test
+      DB_PASSWORD: isolated_test_password
+      CACHE_STORE: file
+      SESSION_DRIVER: file
+      QUEUE_CONNECTION: sync
+      BOOKING_PAYMENT_DRIVER: fake_bank
+      BOOKING_SMS_DRIVER: log
+    depends_on:
+      mysql-test:
+        condition: service_healthy
+  mysql-test:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: consulting_booking_test_20261012
+      MYSQL_USER: consulting_test
+      MYSQL_PASSWORD: isolated_test_password
+      MYSQL_ROOT_PASSWORD: isolated_test_root_password
+    volumes:
+      - consulting_mysql_test_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+volumes:
+  consulting_mysql_test_data:

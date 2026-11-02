@@ -1,0 +1,4 @@
+<?php
+namespace App\Modules\Counselor\Resources;
+use Illuminate\Http\Request;use Illuminate\Http\Resources\Json\JsonResource;
+class CounselorResource extends JsonResource {public function toArray(Request $request):array{return ['id'=>$this->id,'name'=>$this->name,'slug'=>$this->slug,'avatar_url'=>$this->avatar?\Illuminate\Support\Facades\Storage::disk('public')->url($this->avatar):null,'bio'=>$this->bio,'about'=>$this->about,'degree'=>$this->degree,'license_number'=>$this->license_number,'years_of_experience'=>$this->years_of_experience,'languages'=>$this->languages,'socials'=>['instagram'=>$this->instagram,'telegram'=>$this->telegram,'whatsapp'=>$this->whatsapp,'website'=>$this->website,'linkedin'=>$this->linkedin],'meta_title'=>$this->meta_title,'meta_description'=>$this->meta_description,'is_active'=>$this->is_active,'is_public'=>$this->is_public,'specialties'=>SpecialtyResource::collection($this->whenLoaded('specialties'))];}}

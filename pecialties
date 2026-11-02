@@ -1,0 +1,9 @@
+[90m= [39m[34;4mApp\Modules\Counselor\Models\Counselor[39;24m {#6050
+    [34mname[39m: "[32mدکتر تست[39m",
+    [34mslug[39m: "[32mtest-counselor[39m",
+    [34mis_active[39m: [36mtrue[39m,
+    [34mupdated_at[39m: "[32m2026-01-03 10:16:55[39m",
+    [34mcreated_at[39m: "[32m2026-01-03 10:16:55[39m",
+    [34mid[39m: [35m1[39m,
+  }
+

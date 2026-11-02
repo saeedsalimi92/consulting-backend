@@ -1,0 +1,69 @@
+name: consulting-backend
+
+x-app-env: &app-env
+  env_file:
+    - .env.prod
+  environment:
+    APP_ENV: production
+    APP_DEBUG: "false"
+    DB_HOST: database
+    DB_PORT: "3306"
+    QUEUE_CONNECTION: database
+
+x-app-common: &app-common
+  image: consulting-backend-app:${IMAGE_TAG:?Set IMAGE_TAG to a published commit SHA}
+  restart: unless-stopped
+  <<: *app-env
+  volumes:
+    - laravel_storage:/var/www/html/storage
+  depends_on:
+    database:
+      condition: service_healthy
+
+services:
+  app:
+    <<: *app-common
+    healthcheck:
+      test: ["CMD-SHELL", "php -r 'exit(@fsockopen(\"127.0.0.1\", 9000) ? 0 : 1);'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  web:
+    image: consulting-backend-web:${IMAGE_TAG:?Set IMAGE_TAG to a published commit SHA}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${APP_PORT:-8010}:80"
+    depends_on:
+      app:
+        condition: service_healthy
+
+  queue:
+    <<: *app-common
+    command: ["php", "artisan", "queue:work", "database", "--tries=3", "--backoff=30", "--sleep=3", "--max-time=3600"]
+
+  scheduler:
+    <<: *app-common
+    command: ["php", "artisan", "schedule:work"]
+
+  database:
+    image: mysql:8.4
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:?Set DB_DATABASE}
+      MYSQL_USER: ${DB_USERNAME:?Set DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mysqladmin ping -h 127.0.0.1 -u root --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  mysql_data:
+  laravel_storage:

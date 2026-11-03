@@ -64,6 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
+      - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
         with:
           name: backend-images-${{ github.sha }}
@@ -102,6 +103,7 @@ jobs:
           SCP=(scp -o BatchMode=yes -o StrictHostKeyChecking=yes)
           "${SSH[@]}" 'test -d /var/www/consulting/backend/incoming'
           "${SCP[@]}" release/backend-images.tar.gz release/backend-images.tar.gz.sha256 \
+            compose.direct.yaml deployment/production/deploy-direct.sh \
             "$DEPLOY_USER@$DEPLOY_HOST:/var/www/consulting/backend/incoming/"
           "${SSH[@]}" "printf '%s\\n' '$GITHUB_SHA' > /var/www/consulting/backend/incoming/image-tag"
           "${SSH[@]}" 'sudo -n /usr/local/sbin/consulting-backend-deploy'

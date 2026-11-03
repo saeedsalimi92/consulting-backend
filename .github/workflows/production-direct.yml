@@ -1,14 +1,25 @@
-name: Build backend images for direct VPS transfer
+name: Consulting backend production (direct transfer)
 
 on:
+  push:
+    branches: [production]
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy this build to VPS
+        type: boolean
+        default: false
+        required: true
 
 permissions:
   contents: read
 
+concurrency:
+  group: consulting-backend-direct-production
+  cancel-in-progress: false
+
 jobs:
   package:
-    if: github.ref == 'refs/heads/production'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -33,6 +44,7 @@ jobs:
           tags: consulting-backend-web:${{ github.sha }}
       - name: Package images
         run: |
+          set -euo pipefail
           docker save \
             consulting-backend-app:${{ github.sha }} \
             consulting-backend-web:${{ github.sha }} | gzip -1 > backend-images.tar.gz
@@ -43,4 +55,53 @@ jobs:
           path: |
             backend-images.tar.gz
             backend-images.tar.gz.sha256
+          if-no-files-found: error
           retention-days: 3
+
+  deploy:
+    needs: package
+    if: (github.event_name == 'workflow_dispatch' && inputs.deploy == true) || (github.event_name == 'push' && vars.ENABLE_PRODUCTION_DEPLOY == 'true')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: backend-images-${{ github.sha }}
+          path: release
+      - name: Check SSH secrets
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          for key in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS; do
+            if [ -z "${!key}" ]; then
+              echo "::error::Missing $key"
+              exit 1
+            fi
+          done
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Upload artifact and restart only consulting backend
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST")
+          SCP=(scp -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          "${SSH[@]}" 'test -d /var/www/consulting/backend/incoming'
+          "${SCP[@]}" release/backend-images.tar.gz release/backend-images.tar.gz.sha256 \
+            "$DEPLOY_USER@$DEPLOY_HOST:/var/www/consulting/backend/incoming/"
+          "${SSH[@]}" "printf '%s\\n' '$GITHUB_SHA' > /var/www/consulting/backend/incoming/image-tag"
+          "${SSH[@]}" 'sudo -n /usr/local/sbin/consulting-backend-deploy'

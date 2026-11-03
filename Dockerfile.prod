@@ -15,9 +15,11 @@ RUN composer dump-autoload --no-dev --optimize --no-interaction \
  && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
  && chown -R www-data:www-data storage bootstrap/cache
 COPY deployment/production/supervisord.conf /etc/supervisor/supervisord.conf
+COPY deployment/production/start-app.sh /usr/local/bin/consulting-start-app
+RUN chmod 755 /usr/local/bin/consulting-start-app
 ENV APP_ENV=production APP_DEBUG=false
 EXPOSE 9000
-CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/supervisord.conf"]
+CMD ["/usr/local/bin/consulting-start-app"]
 
 FROM nginx:1.27-alpine AS web
 COPY deployment/production/nginx.conf /etc/nginx/conf.d/default.conf
